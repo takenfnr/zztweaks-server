@@ -3,8 +3,7 @@ import sys
 import uuid
 import json
 
-import customtkinter as ctk
-from tkinter import messagebox
+
 
 ctk.set_appearance_mode("dark")
 
