@@ -2,7 +2,7 @@ import os
 import sys
 import uuid
 import json
-import requests
+
 import customtkinter as ctk
 from tkinter import messagebox
 
