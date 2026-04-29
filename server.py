@@ -1,90 +1,93 @@
 from flask import Flask, request, jsonify, render_template_string
-import sqlite3
+from pymongo import MongoClient
 import uuid
+import os
 
 app = Flask(__name__)
 
-# ===== DB SETUP =====
-def get_db():
-    return sqlite3.connect("keys.db")
+# =========================
+# 🔐 MONGO CONFIG
+# =========================
 
-def init_db():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS keys (
-            key TEXT PRIMARY KEY,
-            hwid TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
+# 👉 Sätt din connection string som ENV VAR i Render (rekommenderas)
+MONGO_URI = os.getenv("MONGO_URI")
 
-init_db()
+if not MONGO_URI:
+    raise Exception("MONGO_URI saknas! Lägg till i Render Environment Variables.")
 
-# ===== CHECK =====
+client = MongoClient(MONGO_URI)
+
+db = client["zztweaks"]
+keys_col = db["keys"]
+
+# =========================
+# 🔑 CHECK KEY (HWID LOCK)
+# =========================
 @app.route("/check", methods=["POST"])
 def check():
     data = request.json
     key = data.get("key")
     hwid = data.get("hwid")
 
-    conn = get_db()
-    c = conn.cursor()
+    if not key or not hwid:
+        return jsonify({"status": "error"})
 
-    c.execute("SELECT hwid FROM keys WHERE key=?", (key,))
-    row = c.fetchone()
+    k = keys_col.find_one({"key": key})
 
-    if not row:
+    if not k:
         return jsonify({"status": "invalid"})
 
-    saved_hwid = row[0]
-
-    if saved_hwid == "" or saved_hwid is None:
-        c.execute("UPDATE keys SET hwid=? WHERE key=?", (hwid, key))
-        conn.commit()
-        conn.close()
+    # första användning → bind HWID
+    if not k.get("hwid"):
+        keys_col.update_one(
+            {"key": key},
+            {"$set": {"hwid": hwid}}
+        )
         return jsonify({"status": "ok"})
 
-    if saved_hwid == hwid:
-        conn.close()
+    # samma dator
+    if k["hwid"] == hwid:
         return jsonify({"status": "ok"})
 
-    conn.close()
+    # annan dator
     return jsonify({"status": "locked"})
 
-# ===== CREATE =====
+# =========================
+# ➕ CREATE KEY
+# =========================
 @app.route("/create")
 def create():
     key = str(uuid.uuid4())[:16]
 
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("INSERT INTO keys (key, hwid) VALUES (?, ?)", (key, ""))
-    conn.commit()
-    conn.close()
+    keys_col.insert_one({
+        "key": key,
+        "hwid": ""
+    })
 
-    return f"<h2>New Key:</h2><p>{key}</p><a href='/'>Back</a>"
+    return f"""
+    <h2>New Key:</h2>
+    <p>{key}</p>
+    <a href="/">Back</a>
+    """
 
-# ===== DELETE =====
+# =========================
+# ❌ DELETE KEY
+# =========================
 @app.route("/delete/<key>")
 def delete(key):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("DELETE FROM keys WHERE key=?", (key,))
-    conn.commit()
-    conn.close()
+    keys_col.delete_one({"key": key})
 
-    return "<h3>Deleted</h3><a href='/'>Back</a>"
+    return """
+    <h3>Deleted</h3>
+    <a href="/">Back</a>
+    """
 
-# ===== PANEL =====
+# =========================
+# 🎛️ ADMIN PANEL
+# =========================
 @app.route("/")
 def panel():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT key, hwid FROM keys")
-    rows = c.fetchall()
-    conn.close()
+    all_keys = list(keys_col.find())
 
     html = """
     <h1>ZZTweaks Panel</h1>
@@ -93,16 +96,22 @@ def panel():
         <button>Create Key</button>
     </form>
 
+    <h3>Keys:</h3>
     <ul>
-    {% for key, hwid in rows %}
+    {% for k in keys %}
         <li>
-            <b>{{key}}</b> | {{hwid if hwid else "NOT USED"}}
-            <a href="/delete/{{key}}">[Delete]</a>
+            <b>{{k.key}}</b> |
+            {{k.hwid if k.hwid else "NOT USED"}}
+            <a href="/delete/{{k.key}}">[Delete]</a>
         </li>
     {% endfor %}
     </ul>
     """
-    return render_template_string(html, rows=rows)
 
+    return render_template_string(html, keys=all_keys)
+
+# =========================
+# 🚀 START
+# =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
