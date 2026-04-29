@@ -113,5 +113,16 @@ def panel():
 # =========================
 # 🚀 START
 # =========================
+@app.route("/create", methods=["GET"])
+def create():
+    import uuid
+    key = str(uuid.uuid4())[:16]
+
+    keys_col.insert_one({
+        "key": key,
+        "hwid": ""
+    })
+
+    return {"key": key}
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
