@@ -8,15 +8,12 @@ app = Flask(__name__)
 # =========================
 # 🔐 MONGO CONFIG
 # =========================
-
-# 👉 Sätt din connection string som ENV VAR i Render (rekommenderas)
 MONGO_URI = os.getenv("MONGO_URI")
 
 if not MONGO_URI:
     raise Exception("MONGO_URI saknas! Lägg till i Render Environment Variables.")
 
 client = MongoClient(MONGO_URI)
-
 db = client["zztweaks"]
 keys_col = db["keys"]
 
@@ -55,7 +52,7 @@ def check():
 # =========================
 # ➕ CREATE KEY
 # =========================
-@app.route("/create")
+@app.route("/create", methods=["GET"])
 def create():
     key = str(uuid.uuid4())[:16]
 
@@ -64,11 +61,7 @@ def create():
         "hwid": ""
     })
 
-    return f"""
-    <h2>New Key:</h2>
-    <p>{key}</p>
-    <a href="/">Back</a>
-    """
+    return jsonify({"key": key})
 
 # =========================
 # ❌ DELETE KEY
@@ -77,10 +70,7 @@ def create():
 def delete(key):
     keys_col.delete_one({"key": key})
 
-    return """
-    <h3>Deleted</h3>
-    <a href="/">Back</a>
-    """
+    return jsonify({"status": "deleted"})
 
 # =========================
 # 🎛️ ADMIN PANEL
@@ -113,16 +103,5 @@ def panel():
 # =========================
 # 🚀 START
 # =========================
-@app.route("/create", methods=["GET"])
-def create():
-    import uuid
-    key = str(uuid.uuid4())[:16]
-
-    keys_col.insert_one({
-        "key": key,
-        "hwid": ""
-    })
-
-    return {"key": key}
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
